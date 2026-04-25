@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J-V Data Organizer Web</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #f4f7f6;
+            --panel-bg: #ffffff;
+            --primary: #1f538d;
+            --success: #228B22;
+            --danger: #dc3545;
+            --text-main: #333333;
+            --border: #ddd;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            background-color: var(--panel-bg);
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 900px;
+            padding: 25px;
+            box-sizing: border-box;
+        }
+
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid var(--border); padding-bottom: 10px;}
+        .header h1 { margin: 0; color: var(--primary); font-size: 24px; }
+        
+        .btn-settings {
+            background: none; border: none; font-size: 24px; cursor: pointer; transition: transform 0.2s;
+        }
+        .btn-settings:hover { transform: rotate(45deg); }
+
+        /* Import Section */
+        .upload-btn {
+            background-color: var(--primary); color: white; padding: 12px 20px;
+            border-radius: 6px; cursor: pointer; font-weight: bold;
+            position: relative; overflow: hidden; display: inline-block; margin-bottom: 5px;
+        }
+        .upload-btn input[type="file"] {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            opacity: 0; cursor: pointer;
+        }
+        .folder-label { color: gray; font-style: italic; display: block; margin-bottom: 15px; font-size: 13px;}
+
+        /* Forms */
+        .input-group { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
+        .input-group label { font-weight: bold; }
+        input[type="text"], input[type="number"], select {
+            padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-family: inherit;
+        }
+        
+        /* Nomenclature Table */
+        .nomenclature-box {
+            border: 1px solid var(--border); border-radius: 6px; background: #fafafa;
+            padding: 10px; max-height: 250px; overflow-y: auto; margin-bottom: 20px;
+        }
+        .nom-row { display: flex; gap: 10px; margin-bottom: 8px; align-items: center; }
+        .nom-folder { flex: 2; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600;}
+        .nom-input { flex: 1; }
+
+        /* Exp Conditions */
+        .exp-box { border: 1px solid var(--border); border-radius: 6px; padding: 15px; margin-bottom: 20px; }
+        .exp-row { display: flex; gap: 15px; margin-bottom: 10px; align-items: center; }
+        .exp-label { width: 120px; font-style: italic; font-weight: bold; color: #555;}
+        
+        /* Actions */
+        .btn-run {
+            background-color: var(--success); color: white; border: none; width: 100%;
+            padding: 15px; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer;
+        }
+        .btn-run:hover { opacity: 0.9; }
+        .btn-run:disabled { background-color: #aaa; cursor: not-allowed; }
+
+        /* Console */
+        .console {
+            background-color: #1e1e1e; color: #00ff00; font-family: monospace; font-size: 13px;
+            padding: 15px; border-radius: 6px; height: 150px; overflow-y: auto; margin-top: 20px;
+            white-space: pre-wrap; line-height: 1.4;
+        }
+
+        /* Modal Settings */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5);
+            display: none; justify-content: center; align-items: center; z-index: 100;
+        }
+        .modal {
+            background: white; padding: 20px; border-radius: 8px; width: 300px; text-align: center;
+        }
+        .modal button { background: var(--primary); color: white; border: none; padding: 8px 15px; border-radius: 4px; margin-top: 15px; cursor: pointer;}
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>J-V Data Organizer (.TSV)</h1>
+        <button class="btn-settings" onclick="openSettings()" title="Settings">⚙️</button>
+    </div>
+
+    <div style="text-align: center;">
+        <div class="upload-btn">
+            📁 Import Raw Data Folder
+            <input type="file" id="folder-input" webkitdirectory directory multiple>
+        </div>
+        <span class="folder-label" id="lbl-path">No folder selected</span>
+    </div>
+
+    <div class="input-group">
+        <label>Date:</label>
+        <input type="text" id="inp-date" style="width: 100px;">
+        <label style="margin-left: 15px;">Output Folder Name:</label>
+        <input type="text" id="inp-output" placeholder="Processed_Folder" style="flex: 1;">
+    </div>
+
+    <h4>Nomenclature</h4>
+    <div class="nomenclature-box" id="box-nomenclature">
+        <div style="color: gray; text-align: center; margin-top: 20px;">Please import data...</div>
+    </div>
+
+    <h4>Experimental Conditions</h4>
+    <div class="exp-box">
+        <div id="exp-layers"></div>
+    </div>
+
+    <button class="btn-run" id="btn-run" disabled onclick="processData()">▶ START PROCESSING</button>
+
+    <div class="console" id="console-log">Waiting for import...</div>
+</div>
+
+<div class="modal-overlay" id="modal-settings">
+    <div class="modal">
+        <h3>Rs Calculation Settings</h3>
+        <p style="font-size: 14px; color: gray;">Calculate Rs at target Voltage (Factor × Voc)</p>
+        <div style="margin-bottom: 10px;">
+            <label>Factor (1.0 to 1.5): </label>
+            <input type="number" id="inp-rs-factor" value="1.2" step="0.1" style="width: 60px; text-align: center;">
+        </div>
+        <button onclick="saveSettings()">Save & Close</button>
+    </div>
+</div>
+
+<script>
+    // =======================================================
+    // GLOBAL VARIABLES
+    // =======================================================
+    let rsFactor = 1.2;
+    let rawFiles = []; 
+    let folderMap = {}; 
+
+    // Default Date
+    const d = new Date();
+    document.getElementById('inp-date').value = `${d.getFullYear().toString().slice(-2)}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+    // Dynamic generation for "Layers"
+    const layersConfig = [
+        { id: "etl", label: "ETL", isElectrode: false },
+        { id: "al", label: "Active Layer", isElectrode: false },
+        { id: "htl", label: "HTL", isElectrode: false },
+        { id: "elec", label: "Top Electrode", isElectrode: true }
+    ];
+    
+    const layerContainer = document.getElementById('exp-layers');
+    layersConfig.forEach(l => {
+        let options = l.isElectrode ? ['Evaporation', 'Spray', 'DrBlade', 'Spin'] : ['Spin', 'DrBlade'];
+        let optsHtml = options.map(o => `<option value="${o}">${o}</option>`).join('');
+        
+        layerContainer.innerHTML += `
+            <div class="exp-row" id="row-${l.id}">
+                <div class="exp-label">${l.label}</div>
+                <input type="text" placeholder="Material" id="mat-${l.id}" style="width: 140px;">
+                <select id="dep-${l.id}" style="width: 120px;">${optsHtml}</select>
+                <input type="text" placeholder="Value" id="val-${l.id}" style="width: 80px;">
+            </div>
+        `;
+    });
+
+    // =======================================================
+    // UI & LOGS UTILS
+    // =======================================================
+    function log(msg) {
+        const c = document.getElementById('console-log');
+        c.innerHTML += msg + "\n";
+        c.scrollTop = c.scrollHeight;
+    }
+
+    function openSettings() { document.getElementById('modal-settings').style.display = 'flex'; }
+    function saveSettings() {
+        let val = parseFloat(document.getElementById('inp-rs-factor').value);
+        if (val >= 1.0 && val <= 1.5) {
+            rsFactor = val;
+            log(`> Settings updated: Rs calculated at ${rsFactor} × Voc`);
+            document.getElementById('modal-settings').style.display = 'none';
+        } else { alert("The value must be between 1.0 and 1.5"); }
+    }
+
+    function getUnit(method) {
+        const units = {"spin": "rpm", "drblade": "mm.s-1", "evaporation": "nm", "spray": "layer(s)"};
+        return units[method.toLowerCase()] || "";
+    }
+
+    // =======================================================
+    // FOLDER IMPORT
+    // =======================================================
+    document.getElementById('folder-input').addEventListener('change', function(e) {
+        try {
+            rawFiles = Array.from(e.target.files);
+            if(rawFiles.length === 0) return;
+
+            folderMap = {};
+            log(`\n--- NEW IMPORT ---`);
+            log(`Folder selected, reading ${rawFiles.length} files...`);
+
+            // Filter only .tsv files
+            let tsvFiles = rawFiles.filter(f => f.name.toLowerCase().endsWith('.tsv'));
+            log(`> Found: ${tsvFiles.length} .tsv files.`);
+
+            if(tsvFiles.length === 0) {
+                alert("No .tsv files found in this folder! Check your selection.");
+                log("❌ Error: No .tsv file detected.");
+                e.target.value = ''; // Reset
+                return;
+            }
+
+            let rootFolderName = "Processed_Data";
+            if(tsvFiles[0].webkitRelativePath) {
+                rootFolderName = tsvFiles[0].webkitRelativePath.split('/')[0] || "Processed_Data";
+            }
+            
+            document.getElementById('lbl-path').innerText = `Parent folder: ${rootFolderName}`;
+            document.getElementById('inp-output').value = `Processed_${rootFolderName}`;
+
+            // Group TSV files by parent folder name
+            tsvFiles.forEach(file => {
+                let path = file.webkitRelativePath || file.name;
+                let parts = path.split('/');
+                
+                let parentFolder = "Cells"; // Fallback
+                if (parts.length >= 2) {
+                    parentFolder = parts[parts.length - 2];
+                } else {
+                    let nameParts = file.name.split('_');
+                    if(nameParts.length > 1) parentFolder = nameParts[0];
+                }
+
+                if (!folderMap[parentFolder]) folderMap[parentFolder] = [];
+                folderMap[parentFolder].push(file);
+            });
+
+            renderNomenclature();
+            document.getElementById('btn-run').disabled = false;
+            log(`> Sorting complete. ${Object.keys(folderMap).length} subfolder(s) / cell(s) detected.`);
+            
+        } catch(err) {
+            log(`❌ CRITICAL ERROR during import: ${err.message}`);
+            console.error(err);
+        }
+        
+        e.target.value = ''; // Reset to allow re-selecting the same folder
+    });
+
+    function renderNomenclature() {
+        const box = document.getElementById('box-nomenclature');
+        box.innerHTML = `
+            <div style="display:flex; gap:10px; font-weight:bold; margin-bottom:10px; border-bottom:1px solid #ccc; padding-bottom:5px;">
+                <div style="flex:2;">Original Folder</div>
+                <div style="flex:1;">Cell n°</div>
+                <div style="flex:1;">Condition</div>
+            </div>
+        `;
+        
+        Object.keys(folderMap).forEach(folder => {
+            // Auto-fill logic:
+            // Cell n° = First character
+            // Condition = Rest of the string starting from the 3rd character
+            let cellVal = folder.charAt(0);
+            let condVal = folder.length >= 3 ? folder.substring(2) : "";
+
+            box.innerHTML += `
+                <div class="nom-row" data-folder="${folder}">
+                    <div class="nom-folder" title="${folder}">📁 ${folder}</div>
+                    <input type="text" class="nom-input cell-inp" value="${cellVal}" placeholder="Ex: 1">
+                    <input type="text" class="nom-input cond-inp" value="${condVal}" placeholder="Leave empty for Ref">
+                </div>
+            `;
+        });
+    }
+
+    // =======================================================
+    // MATH UTILS
+    // =======================================================
+    function linearRegression(x, y) {
+        let n = x.length;
+        let sum_x = 0, sum_y = 0, sum_xy = 0, sum_xx = 0;
+        for (let i = 0; i < n; i++) {
+            sum_x += x[i]; sum_y += y[i];
+            sum_xy += x[i] * y[i]; sum_xx += x[i] * x[i];
+        }
+        let denom = (n * sum_xx - sum_x * sum_x);
+        if(denom === 0) return 0;
+        return (n * sum_xy - sum_x * sum_y) / denom;
+    }
+
+    function computeResistance(v_arr, i_arr, target_v, delta_v = 0.1) {
+        let v_win = [], i_win = [];
+        let v_min = target_v - delta_v, v_max = target_v + delta_v;
+        
+        for(let i=0; i<v_arr.length; i++) {
+            if(!isNaN(v_arr[i]) && !isNaN(i_arr[i]) && v_arr[i] >= v_min && v_arr[i] <= v_max) {
+                v_win.push(v_arr[i]);
+                i_win.push(i_arr[i]);
+            }
+        }
+        
+        if(v_win.length >= 2) {
+            let slope = linearRegression(v_win, i_win);
+            if(slope === 0) return Infinity;
+            return Math.abs(1 / slope);
+        } else {
+            // Fallback (search 2 closest points)
+            let pts = v_arr.map((v, idx) => ({v:v, i:i_arr[idx]})).filter(p => !isNaN(p.v) && !isNaN(p.i));
+            pts.sort((a,b) => a.v - b.v);
+            let idx = 0;
+            while(idx < pts.length && pts[idx].v < target_v) idx++;
+            if(idx === 0) idx = 1;
+            if(idx >= pts.length) idx = pts.length - 1;
+            if(pts.length < 2) return 0;
+            let v1 = pts[idx-1].v, v2 = pts[idx].v;
+            let i1 = pts[idx-1].i, i2 = pts[idx].i;
+            if(i1 === i2) return Infinity;
+            return Math.abs((v2 - v1) / (i2 - i1));
+        }
+    }
+
+    // Secure text reading (latin1 for universal compatibility)
+    async function readFileText(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = e => resolve(e.target.result);
+            reader.onerror = e => reject(e);
+            reader.readAsText(file, "latin1"); 
+        });
+    }
+
+    // Bulletproof TSV Parsing
+    function parseTSV(text) {
+        let lines = text.split(/\r?\n/);
+        if(lines.length === 0) return { headers: [], data: [] };
+        
+        let headers = lines[0].split('\t').map(h => h.trim().replace(/≤/g, '²')); 
+        let data = [];
+        
+        for(let i=1; i<lines.length; i++) {
+            if(!lines[i].trim()) continue;
+            let cols = lines[i].split('\t');
+            let row = {};
+            headers.forEach((h, idx) => {
+                let val = cols[idx] ? cols[idx].trim() : "";
+                // Secure comma replacement
+                if(val.includes(',') && !isNaN(val.replace(',', '.'))) {
+                    val = val.replace(',', '.');
+                }
+                row[h] = val;
+            });
+            data.push(row);
+        }
+        return { headers, data };
+    }
+
+    function formatNum(val, isFullFloat=false) {
+        let v = parseFloat(val);
+        if(isNaN(v)) return val;
+        if(v === 0) return "0";
+        if(isFullFloat) return v.toFixed(10).replace(/0+$/, '').replace(/\.$/, '');
+        return v.toString();
+    }
+
+    // =======================================================
+    // MAIN PROCESSING LOGIC (ZIP GENERATION)
+    // =======================================================
+    async function processData() {
+        document.getElementById('btn-run').disabled = true;
+        log("\n--- STARTING PROCESSING ---");
+
+        try {
+            let zip = new JSZip();
+            
+            let dateStr = document.getElementById('inp-date').value.replace(/[\/*?:"<>| ]/g, '-');
+            let outName = document.getElementById('inp-output').value.replace(/[\/*?:"<>| ]/g, '_');
+            let rootFolderName = `${dateStr}_${outName}`;
+            
+            let rootZip = zip.folder(rootFolderName);
+
+            // 1. Experimental Conditions File
+            let expCsv = "Condition\tMaterial\tDeposition\tParameter\n";
+            layersConfig.forEach(l => {
+                let mat = document.getElementById(`mat-${l.id}`).value.trim();
+                let dep = document.getElementById(`dep-${l.id}`).value;
+                let val = document.getElementById(`val-${l.id}`).value.trim();
+                if(mat || val) expCsv += `${l.label}\t${mat}\t${dep}\t${val} ${getUnit(dep)}\n`;
+            });
+            rootZip.file("Experimental_conditions.csv", expCsv);
+
+            // 2. Condition grouping (Nomenclature)
+            let conditionGroups = {}; 
+            
+            document.querySelectorAll('.nom-row').forEach(row => {
+                let folder = row.getAttribute('data-folder');
+                let cellRaw = row.querySelector('.cell-inp').value.trim();
+                let condRaw = row.querySelector('.cond-inp').value.trim();
+                
+                if(!cellRaw) return;
+                
+                let cellSafe = cellRaw.replace(/[\/*?:"<>| ]/g, '_');
+                let condSafe = condRaw.replace(/[\/*?:"<>|]/g, '_').replace(/ /g, '_');
+                if(!condSafe) condSafe = "Ref";
+                
+                if(!conditionGroups[condSafe]) conditionGroups[condSafe] = [];
+                conditionGroups[condSafe].push({folder: folder, cellSafe: cellSafe});
+            });
+
+            let processedCount = 0;
+
+            // 3. Loop over each condition
+            for(let condName in conditionGroups) {
+                let cells = conditionGroups[condName];
+                log(`Processing condition: ${condName} (${cells.length} cells)...`);
+                
+                let condZip = rootZip.folder(condName);
+                let mesZip = condZip.folder(`${condName}_Mesures`);
+                let ivZip = mesZip.folder("I-V");
+
+                let df_raw_combined = [];
+                let df_recap_combined = [];
+                
+                let mesures_combined_dict = {}; 
+                let mesures_headers = ["Voltage (V)"];
+
+                for(let c of cells) {
+                    let files = folderMap[c.folder];
+                    let fRecap = files.filter(f => f.name.toUpperCase().includes("RECAP") && f.name.toLowerCase().endsWith(".tsv"));
+                    let fMesure = files.filter(f => f.name.toUpperCase().includes("MESURES") && f.name.toLowerCase().endsWith(".tsv"));
+
+                    let nouveauxMotifs = [];
+                    let surfaceDict = {};
+                    let recapFinalArr = [];
+
+                    // --- RECAP PROCESSING ---
+                    for(let file of fRecap) {
+                        let text = await readFileText(file);
+                        let tsv = parseTSV(text);
+                        
+                        if(tsv.headers.includes("Nom")) {
+                            tsv.headers = tsv.headers.filter(h => h !== "Nom");
+                        }
+                        
+                        tsv.headers = tsv.headers.map(h => {
+                            if(h === "Rshunt (Ohms/cm²)") return "Rshunt (Ω.cm²)";
+                            if(h === "Rserie (Ohms/cm²)") return "Rserie (Ω.cm²)";
+                            return h;
+                        });
+
+                        tsv.data.forEach(row => {
+                            let mRaw = row["Motif"] || "";
+                            let mInit = !isNaN(mRaw) ? parseInt(parseFloat(mRaw)) : mRaw;
+                            let surfFloat = parseFloat(row["Surface (cm²)"] || 1.0);
+                            
+                            let nouveauNom = `Cell_${c.cellSafe}.${mInit}_${surfFloat.toFixed(2)}cm2`;
+                            surfaceDict[nouveauNom] = surfFloat;
+                            nouveauxMotifs.push(nouveauNom);
+                            row["Motif"] = nouveauNom;
+                            
+                            // Conversions * 1000
+                            if(row['Rshunt (Ω.cm²)']) row['Rshunt (Ω.cm²)'] = (parseFloat(row['Rshunt (Ω.cm²)']) * 1000).toString();
+                            if(row['Rserie (Ω.cm²)']) row['Rserie (Ω.cm²)'] = (parseFloat(row['Rserie (Ω.cm²)']) * 1000).toString();
+
+                            // Save Raw
+                            let rawRow = {};
+                            tsv.headers.forEach(h => rawRow[h] = h === "Motif" ? row[h] : formatNum(row[h], true));
+                            df_raw_combined.push(rawRow);
+
+                            // Build Recap
+                            recapFinalArr.push({
+                                'Motif': nouveauNom,
+                                'Voc (V)': parseFloat(row['Voc (V)']),
+                                'Jsc (mA/cm²)': parseFloat(row['Jsc (mA/cm²)']),
+                                'FF (%)': parseFloat(row['FF (%)']),
+                                'PCE (%)': parseFloat(row['PCE (%)']),
+                                'Rserie (Ω.cm²)': NaN,
+                                'Rshunt (Ω.cm²)': NaN,
+                                'Rserie (Ω)': NaN,
+                                'Rshunt (Ω)': NaN,
+                                'Surface (cm²)': surfFloat
+                            });
+                        });
+                    }
+
+                    // --- MESURES PROCESSING ---
+                    for(let file of fMesure) {
+                        let text = await readFileText(file);
+                        let tsv = parseTSV(text);
+                        
+                        if(nouveauxMotifs.length > 0 && tsv.headers.length === nouveauxMotifs.length + 1) {
+                            tsv.headers = [tsv.headers[0], ...nouveauxMotifs];
+                        }
+
+                        let colX = tsv.headers[0];
+                        
+                        tsv.headers.slice(1).forEach(colY => {
+                            let nomSafe = colY.replace(/[\/\\]/g, '_');
+                            let surface = surfaceDict[colY] || 1.0;
+                            
+                            let curveV = [];
+                            let curveJ = []; 
+                            let curveI = []; 
+
+                            if(!mesures_headers.includes(nomSafe)) mesures_headers.push(nomSafe);
+
+                            tsv.data.forEach(row => {
+                                let v = parseFloat(row[colX]);
+                                let valY = parseFloat(row[colY]);
+                                if(!isNaN(v) && !isNaN(valY)) {
+                                    curveV.push(v);
+                                    curveJ.push(valY);
+                                    curveI.push((valY * surface) / 1000); 
+                                    
+                                    let vKey = v.toFixed(4); 
+                                    if(!mesures_combined_dict[vKey]) mesures_combined_dict[vKey] = {'Voltage (V)': v};
+                                    mesures_combined_dict[vKey][nomSafe] = valY;
+                                }
+                            });
+
+                            // Individual J-V Export
+                            let jvCsv = `Voltage\tJ\nV\tmA/cm²\t${nomSafe}\n`;
+                            for(let k=0; k<curveV.length; k++) jvCsv += `${curveV[k]}\t${curveJ[k]}\n`;
+                            mesZip.file(`${nomSafe}.csv`, jvCsv);
+
+                            // Individual I-V Export
+                            let ivCsv = `Voltage\tI\nV\tA\t${nomSafe}_I-V\n`;
+                            for(let k=0; k<curveV.length; k++) ivCsv += `${curveV[k]}\t${curveI[k]}\n`;
+                            ivZip.file(`${nomSafe}_I-V.csv`, ivCsv);
+
+                            // Resistance Calculation
+                            let rInfo = recapFinalArr.find(r => r.Motif === colY);
+                            if(rInfo && !isNaN(rInfo['Voc (V)'])) {
+                                let voc = rInfo['Voc (V)'];
+                                let rshOhm = computeResistance(curveV, curveI, 0.0, 0.1);
+                                let rsOhm = computeResistance(curveV, curveI, rsFactor * voc, 0.1);
+
+                                rInfo['Rshunt (Ω)'] = rshOhm;
+                                rInfo['Rshunt (Ω.cm²)'] = rshOhm * surface;
+                                rInfo['Rserie (Ω)'] = rsOhm;
+                                rInfo['Rserie (Ω.cm²)'] = rsOhm * surface;
+                            }
+                        });
+                    }
+                    
+                    df_recap_combined.push(...recapFinalArr);
+                    processedCount++;
+                }
+
+                // --- GLOBAL CONDITION SAVES ---
+                
+                // Raw Recap
+                if(df_raw_combined.length > 0) {
+                    let rCols = Object.keys(df_raw_combined[0]);
+                    let rCsv = rCols.join('\t') + '\n';
+                    df_raw_combined.forEach(row => {
+                        rCsv += rCols.map(c => row[c] !== undefined ? row[c] : "").join('\t') + '\n';
+                    });
+                    condZip.file(`${condName}_Raw_Recap.csv`, rCsv);
+                }
+
+                // Combined Mesures
+                let vKeys = Object.keys(mesures_combined_dict).map(k => parseFloat(k)).sort((a,b)=>a-b);
+                if(vKeys.length > 0) {
+                    let mCsv = mesures_headers.join('\t') + '\n';
+                    vKeys.forEach(v => {
+                        let vKey = v.toFixed(4);
+                        let row = mesures_combined_dict[vKey];
+                        mCsv += mesures_headers.map(h => row[h] !== undefined ? formatNum(row[h], true) : "").join('\t') + '\n';
+                    });
+                    condZip.file(`${condName}_Mesures.csv`, mCsv);
+                }
+
+                // Recap Final Combined
+                if(df_recap_combined.length > 0) {
+                    let cCols = ['Motif', 'Voc (V)', 'Jsc (mA/cm²)', 'FF (%)', 'PCE (%)', 'Rserie (Ω.cm²)', 'Rshunt (Ω.cm²)', 'Rserie (Ω)', 'Rshunt (Ω)', 'Surface (cm²)'];
+                    let fCsv = cCols.join('\t') + '\n';
+                    df_recap_combined.forEach(row => {
+                        fCsv += cCols.map(c => {
+                            if(c === 'Motif') return row[c];
+                            if(isNaN(row[c]) || row[c] === null || row[c] === undefined) return "";
+                            return formatNum(row[c], true);
+                        }).join('\t') + '\n';
+                    });
+                    condZip.file(`${condName}_Recap.csv`, fCsv);
+                }
+                
+                log(`  > OK`);
+            }
+
+            // --- ZIP GENERATION ---
+            log(`\n> Generating .zip file... please wait.`);
+            zip.generateAsync({type:"blob"}).then(function(content) {
+                let link = document.createElement("a");
+                link.href = URL.createObjectURL(content);
+                link.download = `${rootFolderName}.zip`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                log(`✅ PROCESSING FINISHED ! (${processedCount} folder(s) processed).`);
+                document.getElementById('btn-run').disabled = false;
+            }).catch(err => {
+                log(`❌ ERROR during ZIP generation: ${err}`);
+                document.getElementById('btn-run').disabled = false;
+            });
+
+        } catch (error) {
+            log(`❌ CRITICAL ERROR DURING CALCULATION: ${error.message}`);
+            console.error(error);
+            document.getElementById('btn-run').disabled = false;
+        }
+    }
+
+</script>
+
+</body>
+</html>
