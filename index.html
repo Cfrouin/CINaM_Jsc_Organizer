@@ -108,7 +108,7 @@
 
 <div class="container">
     <div class="header">
-        <h1>J-V Data Organizer (.TSV)</h1>
+        <h1>J-V Data Organizer</h1>
         <button class="btn-settings" onclick="openSettings()" title="Settings">⚙️</button>
     </div>
 
@@ -217,35 +217,44 @@
     // FOLDER IMPORT
     // =======================================================
     document.getElementById('folder-input').addEventListener('change', function(e) {
+        const consoleDiv = document.getElementById('console-log');
+        consoleDiv.innerHTML = "--- NEW IMPORT STARTED ---\n";
+        
         try {
+            if (!e.target.files || e.target.files.length === 0) {
+                log("❌ Error: Browser returned 0 files. Selection was cancelled or empty.");
+                return;
+            }
+            
             rawFiles = Array.from(e.target.files);
-            if(rawFiles.length === 0) return;
+            log(`> Total files detected in your selection: ${rawFiles.length}`);
 
             folderMap = {};
-            log(`\n--- NEW IMPORT ---`);
-            log(`Folder selected, reading ${rawFiles.length} files...`);
 
-            // Filter only .tsv files
-            let tsvFiles = rawFiles.filter(f => f.name.toLowerCase().endsWith('.tsv'));
-            log(`> Found: ${tsvFiles.length} .tsv files.`);
+            // Fallback robust filter: Check if name contains 'RECAP' or 'MESURE'
+            let dataFiles = rawFiles.filter(f => {
+                let nameUpper = f.name.toUpperCase();
+                return nameUpper.includes('RECAP') || nameUpper.includes('MESURE');
+            });
 
-            if(tsvFiles.length === 0) {
-                alert("No .tsv files found in this folder! Check your selection.");
-                log("❌ Error: No .tsv file detected.");
-                e.target.value = ''; // Reset
+            log(`> Filtered valid data files (Recap/Mesures): ${dataFiles.length}`);
+
+            if(dataFiles.length === 0) {
+                alert("No valid data files found! Ensure your files are named correctly (containing 'Recap' or 'Mesures').");
+                log("❌ Error: Valid files missing.");
                 return;
             }
 
             let rootFolderName = "Processed_Data";
-            if(tsvFiles[0].webkitRelativePath) {
-                rootFolderName = tsvFiles[0].webkitRelativePath.split('/')[0] || "Processed_Data";
+            if(dataFiles[0].webkitRelativePath) {
+                rootFolderName = dataFiles[0].webkitRelativePath.split('/')[0] || "Processed_Data";
             }
             
             document.getElementById('lbl-path').innerText = `Parent folder: ${rootFolderName}`;
             document.getElementById('inp-output').value = `Processed_${rootFolderName}`;
 
-            // Group TSV files by parent folder name
-            tsvFiles.forEach(file => {
+            // Group files by parent folder name
+            dataFiles.forEach(file => {
                 let path = file.webkitRelativePath || file.name;
                 let parts = path.split('/');
                 
@@ -263,14 +272,12 @@
 
             renderNomenclature();
             document.getElementById('btn-run').disabled = false;
-            log(`> Sorting complete. ${Object.keys(folderMap).length} subfolder(s) / cell(s) detected.`);
+            log(`> Setup complete. ${Object.keys(folderMap).length} subfolder(s) ready to be processed.`);
             
         } catch(err) {
             log(`❌ CRITICAL ERROR during import: ${err.message}`);
             console.error(err);
         }
-        
-        e.target.value = ''; // Reset to allow re-selecting the same folder
     });
 
     function renderNomenclature() {
@@ -278,14 +285,14 @@
         box.innerHTML = `
             <div style="display:flex; gap:10px; font-weight:bold; margin-bottom:10px; border-bottom:1px solid #ccc; padding-bottom:5px;">
                 <div style="flex:2;">Original Folder</div>
-                <div style="flex:1;">Cell n°</div>
+                <div style="flex:1;">Cell</div>
                 <div style="flex:1;">Condition</div>
             </div>
         `;
         
         Object.keys(folderMap).forEach(folder => {
             // Auto-fill logic:
-            // Cell n° = First character
+            // Cell = First character
             // Condition = Rest of the string starting from the 3rd character
             let cellVal = folder.charAt(0);
             let condVal = folder.length >= 3 ? folder.substring(2) : "";
@@ -381,9 +388,11 @@
         return { headers, data };
     }
 
+    // Format numbers safely, managing JS Infinity logic
     function formatNum(val, isFullFloat=false) {
         let v = parseFloat(val);
         if(isNaN(v)) return val;
+        if(!isFinite(v)) return v > 0 ? "inf" : "-inf"; // Prevent JS error on Infinity format
         if(v === 0) return "0";
         if(isFullFloat) return v.toFixed(10).replace(/0+$/, '').replace(/\.$/, '');
         return v.toString();
@@ -394,7 +403,7 @@
     // =======================================================
     async function processData() {
         document.getElementById('btn-run').disabled = true;
-        log("\n--- STARTING PROCESSING ---");
+        log("\n--- PROCESSING STARTED ---");
 
         try {
             let zip = new JSZip();
@@ -438,7 +447,7 @@
             // 3. Loop over each condition
             for(let condName in conditionGroups) {
                 let cells = conditionGroups[condName];
-                log(`Processing condition: ${condName} (${cells.length} cells)...`);
+                log(`> Processing condition: ${condName} (${cells.length} cells)...`);
                 
                 let condZip = rootZip.folder(condName);
                 let mesZip = condZip.folder(`${condName}_Mesures`);
@@ -452,8 +461,8 @@
 
                 for(let c of cells) {
                     let files = folderMap[c.folder];
-                    let fRecap = files.filter(f => f.name.toUpperCase().includes("RECAP") && f.name.toLowerCase().endsWith(".tsv"));
-                    let fMesure = files.filter(f => f.name.toUpperCase().includes("MESURES") && f.name.toLowerCase().endsWith(".tsv"));
+                    let fRecap = files.filter(f => f.name.toUpperCase().includes("RECAP"));
+                    let fMesure = files.filter(f => f.name.toUpperCase().includes("MESURES"));
 
                     let nouveauxMotifs = [];
                     let surfaceDict = {};
@@ -514,15 +523,19 @@
                         let text = await readFileText(file);
                         let tsv = parseTSV(text);
                         
+                        let oldHeaders = [...tsv.headers]; // Backup old headers to map data correctly
+                        
                         if(nouveauxMotifs.length > 0 && tsv.headers.length === nouveauxMotifs.length + 1) {
                             tsv.headers = [tsv.headers[0], ...nouveauxMotifs];
                         }
 
-                        let colX = tsv.headers[0];
+                        let colX_new = tsv.headers[0];
+                        let colX_old = oldHeaders[0];
                         
-                        tsv.headers.slice(1).forEach(colY => {
-                            let nomSafe = colY.replace(/[\/\\]/g, '_');
-                            let surface = surfaceDict[colY] || 1.0;
+                        tsv.headers.slice(1).forEach((colY_new, idx) => {
+                            let colY_old = oldHeaders[idx + 1];
+                            let nomSafe = colY_new.replace(/[\/\\]/g, '_');
+                            let surface = surfaceDict[colY_new] || 1.0;
                             
                             let curveV = [];
                             let curveJ = []; 
@@ -531,8 +544,8 @@
                             if(!mesures_headers.includes(nomSafe)) mesures_headers.push(nomSafe);
 
                             tsv.data.forEach(row => {
-                                let v = parseFloat(row[colX]);
-                                let valY = parseFloat(row[colY]);
+                                let v = parseFloat(row[colX_old]);
+                                let valY = parseFloat(row[colY_old]);
                                 if(!isNaN(v) && !isNaN(valY)) {
                                     curveV.push(v);
                                     curveJ.push(valY);
@@ -555,7 +568,7 @@
                             ivZip.file(`${nomSafe}_I-V.csv`, ivCsv);
 
                             // Resistance Calculation
-                            let rInfo = recapFinalArr.find(r => r.Motif === colY);
+                            let rInfo = recapFinalArr.find(r => r.Motif === colY_new);
                             if(rInfo && !isNaN(rInfo['Voc (V)'])) {
                                 let voc = rInfo['Voc (V)'];
                                 let rshOhm = computeResistance(curveV, curveI, 0.0, 0.1);
@@ -615,7 +628,7 @@
             }
 
             // --- ZIP GENERATION ---
-            log(`\n> Generating .zip file... please wait.`);
+            log(`\n> Compiling files into .zip format...`);
             zip.generateAsync({type:"blob"}).then(function(content) {
                 let link = document.createElement("a");
                 link.href = URL.createObjectURL(content);
@@ -624,8 +637,11 @@
                 link.click();
                 document.body.removeChild(link);
                 
-                log(`✅ PROCESSING FINISHED ! (${processedCount} folder(s) processed).`);
+                log(`✅ SUCCESS! Downloaded ${processedCount} processed folder(s).`);
                 document.getElementById('btn-run').disabled = false;
+                
+                // Clear the input so you can re-upload the same folder immediately
+                document.getElementById('folder-input').value = ''; 
             }).catch(err => {
                 log(`❌ ERROR during ZIP generation: ${err}`);
                 document.getElementById('btn-run').disabled = false;
